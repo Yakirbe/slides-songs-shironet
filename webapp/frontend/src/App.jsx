@@ -1,6 +1,9 @@
 import { useState } from 'react'
 import pptxgen from 'pptxgenjs'
 
+// CORS proxy for fetching Shironet pages
+const CORS_PROXY = 'https://api.allorigins.win/raw?url='
+
 // Section colors (cycling through for verses/choruses)
 const SECTION_COLORS = [
   'E8EAFF', // White-blue
@@ -48,14 +51,76 @@ function getOptimalLayout(lineCount) {
   return { columns: 5, fontSize: 10 }
 }
 
+// Search Shironet for songs
+async function searchShironet(query) {
+  const searchUrl = `https://shironet.mako.co.il/search?q=${encodeURIComponent(query)}`
+  
+  const response = await fetch(CORS_PROXY + encodeURIComponent(searchUrl))
+  if (!response.ok) throw new Error('Search failed')
+  
+  const html = await response.text()
+  const parser = new DOMParser()
+  const doc = parser.parseFromString(html, 'text/html')
+  
+  const results = []
+  const links = doc.querySelectorAll('a[href*="type=lyrics"]')
+  
+  links.forEach(link => {
+    const href = link.getAttribute('href')
+    const text = link.textContent.trim()
+    
+    if (href && text && href.includes('wrkid')) {
+      let title = text
+      let artist = ''
+      
+      if (text.includes(' - ')) {
+        const parts = text.split(' - ')
+        title = parts[0].trim()
+        artist = parts[1]?.trim() || ''
+      }
+      
+      const fullUrl = href.startsWith('/') 
+        ? `https://shironet.mako.co.il${href}` 
+        : href
+      
+      // Avoid duplicates
+      if (!results.find(r => r.url === fullUrl)) {
+        results.push({ title, artist, url: fullUrl })
+      }
+    }
+  })
+  
+  return results.slice(0, 10)
+}
+
+// Extract lyrics from Shironet page
+async function extractLyrics(url) {
+  const response = await fetch(CORS_PROXY + encodeURIComponent(url))
+  if (!response.ok) throw new Error('Failed to load page')
+  
+  const html = await response.text()
+  const parser = new DOMParser()
+  const doc = parser.parseFromString(html, 'text/html')
+  
+  // Get title
+  const titleElem = doc.querySelector('h1, .artist_song_name_txt')
+  const title = titleElem?.textContent?.trim() || ''
+  
+  // Get lyrics
+  const lyricsElem = doc.querySelector('span.artist_lyrics_text')
+  const lyrics = lyricsElem?.textContent || ''
+  
+  return { title, lyrics }
+}
+
+// Generate PPTX
 async function generatePptx(title, lyricsText) {
   const pptx = new pptxgen()
-  pptx.layout = 'LAYOUT_WIDE' // 13.33" x 7.5"
+  pptx.layout = 'LAYOUT_WIDE'
   
   const lines = lyricsText.split('\n')
   const isRtl = isHebrew(title) || isHebrew(lyricsText)
   
-  // Split into sections and assign colors
   const sections = splitIntoSections(lines)
   const coloredLines = []
   
@@ -72,10 +137,9 @@ async function generatePptx(title, lyricsText) {
   const layout = getOptimalLayout(coloredLines.length)
   const { columns, fontSize } = layout
   
-  // Create slide
   const slide = pptx.addSlide()
   
-  // Background image from Lorem Picsum
+  // Background image
   const seed = Math.abs(title.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % 1000
   slide.addImage({
     path: `https://picsum.photos/seed/${seed}/1920/1080`,
@@ -97,7 +161,6 @@ async function generatePptx(title, lyricsText) {
     cols.push(coloredLines.slice(i * linesPerCol, (i + 1) * linesPerCol))
   }
   
-  // Column dimensions
   const margin = 0.3
   const colGap = 0.2
   const contentTop = 0.75
@@ -105,11 +168,9 @@ async function generatePptx(title, lyricsText) {
   const availableWidth = 13.33 - (2 * margin)
   const colWidth = (availableWidth - (colGap * (columns - 1))) / columns
   
-  // Render columns
   for (let i = 0; i < cols.length; i++) {
     const colLines = cols[i]
     
-    // Calculate position (RTL: start from right)
     let left
     if (isRtl) {
       left = 13.33 - margin - colWidth - (i * (colWidth + colGap))
@@ -117,7 +178,6 @@ async function generatePptx(title, lyricsText) {
       left = margin + (i * (colWidth + colGap))
     }
     
-    // Background box
     slide.addShape('roundRect', {
       x: left - 0.1, y: contentTop - 0.05,
       w: colWidth + 0.2, h: contentHeight + 0.1,
@@ -125,7 +185,6 @@ async function generatePptx(title, lyricsText) {
       line: { color: '1E1E32', transparency: 100 }
     })
     
-    // Text content
     const textObjects = colLines.map(item => ({
       text: item.text + '\n',
       options: { color: item.color, fontSize, breakLine: true }
@@ -140,19 +199,64 @@ async function generatePptx(title, lyricsText) {
     })
   }
   
-  // Download
   await pptx.writeFile({ fileName: `${title.replace(/\s+/g, '_')}.pptx` })
 }
 
 function App() {
-  const [title, setTitle] = useState('')
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState([])
+  const [selectedSong, setSelectedSong] = useState(null)
   const [lyrics, setLyrics] = useState('')
+  const [title, setTitle] = useState('')
+  const [searching, setSearching] = useState(false)
+  const [loading, setLoading] = useState(null)
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState('')
 
+  const handleSearch = async (e) => {
+    e.preventDefault()
+    if (!query.trim()) return
+    
+    setSearching(true)
+    setError('')
+    setResults([])
+    setSelectedSong(null)
+    setLyrics('')
+    
+    try {
+      const searchResults = await searchShironet(query.trim())
+      setResults(searchResults)
+      if (searchResults.length === 0) {
+        setError('No results found')
+      }
+    } catch (err) {
+      setError('Search failed: ' + err.message)
+      console.error(err)
+    } finally {
+      setSearching(false)
+    }
+  }
+
+  const handleSelectSong = async (song) => {
+    setLoading(song.url)
+    setError('')
+    
+    try {
+      const { title: extractedTitle, lyrics: extractedLyrics } = await extractLyrics(song.url)
+      setSelectedSong(song)
+      setTitle(extractedTitle || `${song.title} - ${song.artist}`)
+      setLyrics(extractedLyrics)
+    } catch (err) {
+      setError('Failed to load lyrics: ' + err.message)
+      console.error(err)
+    } finally {
+      setLoading(null)
+    }
+  }
+
   const handleGenerate = async () => {
     if (!title.trim() || !lyrics.trim()) {
-      setError('Please enter both title and lyrics')
+      setError('No lyrics loaded')
       return
     }
     
@@ -162,7 +266,7 @@ function App() {
     try {
       await generatePptx(title.trim(), lyrics.trim())
     } catch (err) {
-      setError('Failed to generate PPTX: ' + err.message)
+      setError('Failed to generate: ' + err.message)
       console.error(err)
     } finally {
       setGenerating(false)
@@ -177,70 +281,94 @@ function App() {
             <span className="logo-icon">🎵</span>
             <h1>Lyrics Slide Generator</h1>
           </div>
-          <p className="subtitle">Paste lyrics and generate beautiful presentation slides</p>
+          <p className="subtitle">Search Shironet and generate presentation slides</p>
         </header>
 
-        <div className="form">
-          <div className="input-group">
-            <label>Song Title</label>
+        <form onSubmit={handleSearch} className="search-form">
+          <div className="search-box">
             <input
               type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Enter song title..."
-              className="text-input"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search song on Shironet..."
+              className="search-input"
               dir="auto"
             />
+            <button type="submit" className="search-button" disabled={searching}>
+              {searching ? <span className="spinner"></span> : 'Search'}
+            </button>
           </div>
-          
-          <div className="input-group">
-            <label>Lyrics</label>
-            <textarea
-              value={lyrics}
-              onChange={(e) => setLyrics(e.target.value)}
-              placeholder="Paste lyrics here... (separate verses with empty lines)"
-              className="lyrics-input"
-              dir="auto"
-              rows={12}
-            />
-          </div>
-          
-          <button 
-            onClick={handleGenerate} 
-            className="generate-button"
-            disabled={generating}
-          >
-            {generating ? (
-              <>
-                <span className="spinner"></span>
-                <span>Generating...</span>
-              </>
-            ) : (
-              <>
-                <span className="download-icon">📥</span>
-                <span>Generate PPTX</span>
-              </>
-            )}
-          </button>
-        </div>
+        </form>
 
-        {error && (
-          <div className="error-message">
-            {error}
+        {error && <div className="error-message">{error}</div>}
+
+        {results.length > 0 && !selectedSong && (
+          <div className="results">
+            <h2 className="results-title">Search Results</h2>
+            <div className="results-list">
+              {results.map((song, i) => (
+                <div 
+                  key={i} 
+                  className="result-card"
+                  onClick={() => handleSelectSong(song)}
+                >
+                  <div className="result-info">
+                    <h3 className="result-title">{song.title}</h3>
+                    <p className="result-artist">{song.artist}</p>
+                  </div>
+                  {loading === song.url ? (
+                    <span className="spinner small"></span>
+                  ) : (
+                    <span className="arrow">←</span>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
-        <div className="tips">
-          <h3>Tips</h3>
-          <ul>
-            <li>Separate verses/choruses with empty lines for color coding</li>
-            <li>Hebrew text auto-detects RTL</li>
-            <li>Long lyrics auto-split into columns</li>
-          </ul>
-        </div>
+        {selectedSong && lyrics && (
+          <div className="editor">
+            <div className="editor-header">
+              <h2>{title}</h2>
+              <button 
+                className="back-button"
+                onClick={() => { setSelectedSong(null); setLyrics(''); }}
+              >
+                ← Back to results
+              </button>
+            </div>
+            
+            <textarea
+              value={lyrics}
+              onChange={(e) => setLyrics(e.target.value)}
+              className="lyrics-input"
+              dir="auto"
+              rows={15}
+            />
+            
+            <button 
+              onClick={handleGenerate} 
+              className="generate-button"
+              disabled={generating}
+            >
+              {generating ? (
+                <>
+                  <span className="spinner"></span>
+                  <span>Generating...</span>
+                </>
+              ) : (
+                <>
+                  <span className="download-icon">📥</span>
+                  <span>Generate PPTX</span>
+                </>
+              )}
+            </button>
+          </div>
+        )}
 
         <footer className="footer">
-          <p>100% client-side • No data sent to servers</p>
+          <p>Searches Shironet • 100% client-side</p>
         </footer>
       </div>
     </div>

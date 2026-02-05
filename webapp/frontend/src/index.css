@@ -44,7 +44,7 @@ body {
 /* Header */
 .header {
   text-align: center;
-  margin-bottom: 3rem;
+  margin-bottom: 2.5rem;
 }
 
 .logo {
@@ -79,69 +79,68 @@ body {
   font-size: 1rem;
 }
 
-/* Form */
-.form {
-  display: flex;
-  flex-direction: column;
-  gap: 1.25rem;
+/* Search Form */
+.search-form {
   margin-bottom: 2rem;
 }
 
-.input-group {
+.search-box {
   display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.input-group label {
-  font-size: 0.9rem;
-  font-weight: 500;
-  color: var(--text-secondary);
-}
-
-.text-input {
+  gap: 0.75rem;
   background: var(--bg-card);
+  padding: 0.5rem;
+  border-radius: 1rem;
   border: 1px solid var(--border-color);
-  border-radius: 0.75rem;
+  transition: all 0.3s ease;
+}
+
+.search-box:focus-within {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.search-input {
+  flex: 1;
+  background: transparent;
+  border: none;
   padding: 1rem 1.25rem;
   font-size: 1.1rem;
   color: var(--text-primary);
   font-family: inherit;
-  transition: all 0.3s ease;
 }
 
-.text-input:focus {
-  outline: none;
-  border-color: var(--accent-primary);
-  box-shadow: 0 0 0 3px var(--accent-glow);
-}
-
-.text-input::placeholder {
+.search-input::placeholder {
   color: var(--text-muted);
 }
 
-.lyrics-input {
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
+.search-input:focus {
+  outline: none;
+}
+
+.search-button {
+  background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+  color: white;
+  border: none;
+  padding: 1rem 2rem;
   border-radius: 0.75rem;
-  padding: 1rem 1.25rem;
   font-size: 1rem;
-  color: var(--text-primary);
-  font-family: inherit;
-  resize: vertical;
-  min-height: 200px;
-  line-height: 1.6;
+  font-weight: 600;
+  cursor: pointer;
   transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 100px;
 }
 
-.lyrics-input:focus {
-  outline: none;
-  border-color: var(--accent-primary);
-  box-shadow: 0 0 0 3px var(--accent-glow);
+.search-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px var(--accent-glow);
 }
 
-.lyrics-input::placeholder {
-  color: var(--text-muted);
+.search-button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
 }
 
 /* Spinner */
@@ -149,7 +148,7 @@ body {
   width: 20px;
   height: 20px;
   border: 2px solid transparent;
-  border-top-color: white;
+  border-top-color: currentColor;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -163,8 +162,141 @@ body {
   to { transform: rotate(360deg); }
 }
 
+/* Error */
+.error-message {
+  background: rgba(248, 113, 113, 0.1);
+  border: 1px solid rgba(248, 113, 113, 0.3);
+  color: var(--error);
+  padding: 1rem 1.5rem;
+  border-radius: 0.75rem;
+  margin-bottom: 1.5rem;
+  text-align: center;
+}
+
+/* Results */
+.results {
+  animation: fadeIn 0.4s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.results-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+  color: var(--text-secondary);
+}
+
+.results-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.result-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 0.75rem;
+  padding: 1rem 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.result-card:hover {
+  border-color: var(--accent-primary);
+  background: var(--bg-secondary);
+}
+
+.result-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.result-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 0.15rem;
+}
+
+.result-artist {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.arrow {
+  color: var(--accent-secondary);
+  font-size: 1.2rem;
+}
+
+/* Editor */
+.editor {
+  animation: fadeIn 0.4s ease;
+}
+
+.editor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.editor-header h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.back-button {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.back-button:hover {
+  border-color: var(--accent-primary);
+  color: var(--text-primary);
+}
+
+.lyrics-input {
+  width: 100%;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 0.75rem;
+  padding: 1rem 1.25rem;
+  font-size: 1rem;
+  color: var(--text-primary);
+  font-family: inherit;
+  resize: vertical;
+  min-height: 300px;
+  line-height: 1.7;
+  margin-bottom: 1rem;
+  transition: all 0.3s ease;
+}
+
+.lyrics-input:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
 /* Generate Button */
 .generate-button {
+  width: 100%;
   background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
   color: white;
   border: none;
@@ -194,55 +326,9 @@ body {
   font-size: 1.2rem;
 }
 
-/* Error */
-.error-message {
-  background: rgba(248, 113, 113, 0.1);
-  border: 1px solid rgba(248, 113, 113, 0.3);
-  color: var(--error);
-  padding: 1rem 1.5rem;
-  border-radius: 0.75rem;
-  margin-bottom: 2rem;
-  text-align: center;
-}
-
-/* Tips */
-.tips {
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  border-radius: 1rem;
-  padding: 1.25rem 1.5rem;
-  margin-top: 2rem;
-}
-
-.tips h3 {
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--text-secondary);
-  margin-bottom: 0.75rem;
-}
-
-.tips ul {
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.tips li {
-  color: var(--text-muted);
-  font-size: 0.9rem;
-  padding-right: 1rem;
-}
-
-.tips li::before {
-  content: "→";
-  margin-left: 0.5rem;
-  color: var(--accent-secondary);
-}
-
 /* Footer */
 .footer {
-  margin-top: 4rem;
+  margin-top: 3rem;
   text-align: center;
   color: var(--text-muted);
   font-size: 0.85rem;
@@ -266,13 +352,8 @@ body {
     width: 100%;
   }
   
-  .result-card {
+  .editor-header {
     flex-direction: column;
-    align-items: stretch;
-    text-align: center;
-  }
-  
-  .generate-button {
-    justify-content: center;
+    align-items: flex-start;
   }
 }
