@@ -281,15 +281,15 @@ async function generatePptx(title, lyricsText) {
     x: 0, y: 0, w: '100%', h: '100%'
   })
   
-  // Title with dark background box
+  // Compact title bar at top
   slide.addShape('rect', {
-    x: 0, y: 0.1, w: '100%', h: 0.6,
-    fill: { color: '000000', transparency: 50 }
+    x: 0, y: 0, w: '100%', h: 0.65,
+    fill: { color: '000000', transparency: 45 }
   })
   
   slide.addText(title, {
-    x: 0.2, y: 0.15, w: '96%', h: 0.5,
-    fontSize: 28, bold: true,
+    x: 0.1, y: 0.1, w: '98%', h: 0.5,
+    fontSize: 32, bold: true,
     color: 'FFFFFF',
     align: 'center'
   })
@@ -301,30 +301,31 @@ async function generatePptx(title, lyricsText) {
     cols.push(cleanedLines.slice(i * linesPerCol, (i + 1) * linesPerCol))
   }
   
-  const margin = 0.3
-  const colGap = 0.2
-  const contentTop = 0.8
-  const contentHeight = 6.4
-  const availableWidth = 13.33 - (2 * margin)
+  // Full-width layout with minimal margins
+  const margin = 0.15
+  const colGap = 0.1
+  const contentTop = 0.75
+  const contentHeight = 6.7
+  const slideWidth = 13.33
+  const availableWidth = slideWidth - (2 * margin)
   const colWidth = (availableWidth - (colGap * (columns - 1))) / columns
+  
+  // Single dark overlay for entire content area
+  slide.addShape('rect', {
+    x: 0, y: contentTop - 0.1,
+    w: slideWidth, h: contentHeight + 0.2,
+    fill: { color: '000000', transparency: 35 }
+  })
   
   for (let i = 0; i < cols.length; i++) {
     const colLines = cols[i]
     
     let left
     if (isRtl) {
-      left = 13.33 - margin - colWidth - (i * (colWidth + colGap))
+      left = slideWidth - margin - colWidth - (i * (colWidth + colGap))
     } else {
       left = margin + (i * (colWidth + colGap))
     }
-    
-    // Dark semi-transparent background for text
-    slide.addShape('roundRect', {
-      x: left - 0.1, y: contentTop - 0.05,
-      w: colWidth + 0.2, h: contentHeight + 0.1,
-      fill: { color: '000000', transparency: 40 },
-      line: { color: '000000', transparency: 100 }
-    })
     
     // All text in white
     const textContent = colLines.join('\n')
