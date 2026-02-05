@@ -40,6 +40,38 @@ function cleanPunctuation(text) {
   return text.replace(/[,.]/g, '')
 }
 
+// Normalize lyrics: collapse multiple empty lines into one, trim whitespace
+function normalizeLyrics(text) {
+  // Split into lines
+  let lines = text.split('\n')
+  
+  // Trim each line
+  lines = lines.map(l => l.trim())
+  
+  // Collapse consecutive empty lines into single empty line
+  const normalized = []
+  let prevEmpty = false
+  
+  for (const line of lines) {
+    if (line === '') {
+      if (!prevEmpty) {
+        normalized.push('')
+        prevEmpty = true
+      }
+      // Skip additional empty lines
+    } else {
+      normalized.push(line)
+      prevEmpty = false
+    }
+  }
+  
+  // Remove leading/trailing empty lines
+  while (normalized.length && normalized[0] === '') normalized.shift()
+  while (normalized.length && normalized[normalized.length - 1] === '') normalized.pop()
+  
+  return normalized.join('\n')
+}
+
 function splitIntoSections(lines) {
   const sections = []
   let current = []
@@ -173,6 +205,9 @@ async function extractLyrics(url) {
     throw new Error('Could not find lyrics on page')
   }
   
+  // Normalize lyrics to fix spacing issues
+  lyrics = normalizeLyrics(lyrics)
+  
   return { title, lyrics }
 }
 
@@ -181,7 +216,9 @@ async function generatePptx(title, lyricsText) {
   const pptx = new pptxgen()
   pptx.layout = 'LAYOUT_WIDE'
   
-  const lines = lyricsText.split('\n')
+  // Normalize the lyrics first
+  const normalizedLyrics = normalizeLyrics(lyricsText)
+  const lines = normalizedLyrics.split('\n')
   const isRtl = isHebrew(title) || isHebrew(lyricsText)
   
   const sections = splitIntoSections(lines)
