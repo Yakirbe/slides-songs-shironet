@@ -1,41 +1,67 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import pptxgen from 'pptxgenjs'
 
-// Status logger
-let statusLog = []
-function log(msg) {
-  console.log(msg)
-  statusLog.push(`${new Date().toLocaleTimeString()}: ${msg}`)
-  if (statusLog.length > 20) statusLog.shift()
+// Debug log storage
+let debugLog = []
+let logListeners = []
+
+function log(msg, data = null) {
+  const entry = {
+    time: new Date().toLocaleTimeString(),
+    msg,
+    data: data ? JSON.stringify(data, null, 2) : null
+  }
+  console.log(entry.time, msg, data || '')
+  debugLog.push(entry)
+  if (debugLog.length > 50) debugLog.shift()
+  // Notify listeners
+  logListeners.forEach(fn => fn([...debugLog]))
+}
+
+function getDebugLog() {
+  return [...debugLog]
+}
+
+function subscribeToLog(fn) {
+  logListeners.push(fn)
+  return () => {
+    logListeners = logListeners.filter(f => f !== fn)
+  }
 }
 
 // Fetch via allorigins API with retry
 async function fetchWithProxy(url, retries = 3) {
   const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`
+  log(`Proxy URL: ${proxyUrl.substring(0, 100)}...`)
   
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      log(`Fetching (attempt ${attempt + 1})...`)
+      log(`Fetch attempt ${attempt + 1}/${retries + 1}`)
       const response = await fetch(proxyUrl, { 
         signal: AbortSignal.timeout(15000) // 15s timeout
       })
+      
+      log(`Response status: ${response.status}`)
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`)
+        throw new Error(`HTTP ${response.status} ${response.statusText}`)
       }
       
       const data = await response.json()
       if (!data.contents) {
-        throw new Error('Empty response')
+        log('Response has no contents', { keys: Object.keys(data) })
+        throw new Error('Empty response - no contents field')
       }
       
-      log(`Fetch successful`)
+      log(`Fetch OK - got ${data.contents.length} chars`)
       return data.contents
     } catch (e) {
-      log(`Attempt ${attempt + 1} failed: ${e.message}`)
+      log(`Attempt ${attempt + 1} failed: ${e.name}: ${e.message}`)
       if (attempt === retries) {
         throw new Error(`Failed after ${retries + 1} attempts: ${e.message}`)
       }
-      await new Promise(r => setTimeout(r, 1000 * (attempt + 1)))
+      const delay = 1000 * (attempt + 1)
+      log(`Waiting ${delay}ms before retry...`)
+      await new Promise(r => setTimeout(r, delay))
     }
   }
 }
@@ -147,23 +173,32 @@ function getOptimalLayout(lines) {
 
 // Search Shironet
 async function searchShironet(query) {
-  log(`Searching for: ${query}`)
+  log(`=== SEARCH START: "${query}" ===`)
   const searchUrl = `https://shironet.mako.co.il/searchSongs?q=${encodeURIComponent(query)}&type=works`
+  log(`Search URL: ${searchUrl}`)
   
   const html = await fetchWithProxy(searchUrl)
+  log(`Got HTML: ${html.length} chars`)
+  
   const parser = new DOMParser()
   const doc = parser.parseFromString(html, 'text/html')
   
   const results = []
   const rows = doc.querySelectorAll('tr')
+  log(`Found ${rows.length} table rows`)
   
-  rows.forEach(row => {
+  let songLinksFound = 0
+  rows.forEach((row, idx) => {
     const songLink = row.querySelector('a[href*="type=lyrics"][href*="wrkid"]')
     if (!songLink) return
+    songLinksFound++
     
     const href = songLink.getAttribute('href')
     const title = songLink.textContent.trim()
-    if (!title) return
+    if (!title) {
+      log(`Row ${idx}: has link but no title`)
+      return
+    }
     
     let artist = ''
     const allLinks = row.querySelectorAll('a[href*="prfid"]')
@@ -181,10 +216,11 @@ async function searchShironet(query) {
     
     if (!results.find(r => r.url === fullUrl)) {
       results.push({ title, artist, url: fullUrl })
+      log(`Found: "${title}" by "${artist}"`)
     }
   })
   
-  log(`Found ${results.length} results`)
+  log(`=== SEARCH DONE: ${songLinksFound} links, ${results.length} unique results ===`)
   return results.slice(0, 15)
 }
 
@@ -198,25 +234,44 @@ function isValidLyrics(text) {
 
 // Extract lyrics
 async function extractLyrics(url) {
-  log(`Extracting lyrics from: ${url}`)
+  log(`=== EXTRACT LYRICS START ===`)
+  log(`URL: ${url}`)
+  
   const html = await fetchWithProxy(url)
+  log(`Got HTML: ${html.length} chars`)
+  
+  // Check for bot detection
+  if (html.includes('captcha') || html.includes('blocked')) {
+    log('WARNING: Page may have bot detection!')
+  }
+  
   const parser = new DOMParser()
   const doc = parser.parseFromString(html, 'text/html')
   
+  // Title extraction
   let title = ''
   const titleElem = doc.querySelector('.artist_song_name_txt')
   if (titleElem?.textContent?.trim()) {
     title = titleElem.textContent.trim()
+    log(`Found title: "${title}"`)
+  } else {
+    log('Title element .artist_song_name_txt not found')
+    // Try alternative
+    const h1 = doc.querySelector('h1')
+    if (h1) log(`H1 found: "${h1.textContent.trim().substring(0, 50)}..."`)
   }
   
+  // Artist extraction
   let artist = ''
   const artistLinks = doc.querySelectorAll('a[href*="prfid"]')
+  log(`Found ${artistLinks.length} artist links`)
   for (const link of artistLinks) {
     const href = link.getAttribute('href') || ''
     if (!href.includes('wrkid') && !href.includes('type=lyrics')) {
       const text = link.textContent.trim()
       if (text && text.length > 1 && !text.includes('{')) {
         artist = text
+        log(`Found artist: "${artist}"`)
         break
       }
     }
@@ -226,41 +281,61 @@ async function extractLyrics(url) {
     title = `${title} - ${artist}`
   }
   
+  // Lyrics extraction
   let lyrics = ''
   const lyricsElements = doc.querySelectorAll('span.artist_lyrics_text')
+  log(`Found ${lyricsElements.length} span.artist_lyrics_text elements`)
   
-  for (const elem of lyricsElements) {
+  for (let i = 0; i < lyricsElements.length; i++) {
+    const elem = lyricsElements[i]
     let lyricsHtml = elem.innerHTML
     lyricsHtml = lyricsHtml.replace(/<br\s*\/?>/gi, '\n')
     const tempDiv = document.createElement('div')
     tempDiv.innerHTML = lyricsHtml
     const text = tempDiv.textContent.trim()
     
+    log(`Lyrics elem ${i}: ${text.length} chars, valid=${isValidLyrics(text)}`)
+    if (text.length < 100) {
+      log(`  Preview: "${text.substring(0, 100)}"`)
+    }
+    
     if (isValidLyrics(text)) {
       lyrics = text
+      log(`Using lyrics element ${i}`)
       break
     }
   }
   
+  // Fallback search
   if (!lyrics) {
+    log('Primary selector failed, trying fallback...')
     const allSpans = doc.querySelectorAll('span, div, p')
+    log(`Scanning ${allSpans.length} elements for lyrics...`)
+    let candidates = 0
     for (const elem of allSpans) {
       const text = elem.textContent.trim()
       if (text.length > 100 && text.includes('\n') && isValidLyrics(text)) {
+        candidates++
         if (!text.includes('ראשי') || text.length > 500) {
           lyrics = text
+          log(`Found lyrics in fallback (candidate ${candidates}): ${text.length} chars`)
           break
         }
       }
     }
+    log(`Fallback found ${candidates} candidates`)
   }
   
   if (!lyrics) {
-    throw new Error('Could not find lyrics')
+    log('=== EXTRACT FAILED - NO LYRICS ===')
+    // Log page structure for debugging
+    const bodyText = doc.body?.textContent?.substring(0, 500) || 'NO BODY'
+    log(`Page preview: ${bodyText}...`)
+    throw new Error('Could not find lyrics on page')
   }
   
   lyrics = normalizeLyrics(lyrics)
-  log(`Extracted lyrics: ${lyrics.length} chars`)
+  log(`=== EXTRACT SUCCESS: "${title}" - ${lyrics.length} chars ===`)
   
   return { title: title || 'Unknown Song', lyrics }
 }
@@ -401,6 +476,15 @@ function App() {
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState('')
   const [status, setStatus] = useState('')
+  const [showDebug, setShowDebug] = useState(false)
+  const [debugLogs, setDebugLogs] = useState([])
+  
+  // Subscribe to debug log updates
+  useEffect(() => {
+    setDebugLogs(getDebugLog())
+    const unsub = subscribeToLog(setDebugLogs)
+    return unsub
+  }, [])
 
   const handleSearch = async (e) => {
     e.preventDefault()
@@ -637,7 +721,37 @@ function App() {
 
         <footer className="footer">
           <p>Searches Shironet • 100% client-side</p>
+          <button 
+            className="debug-toggle"
+            onClick={() => setShowDebug(!showDebug)}
+          >
+            {showDebug ? 'Hide' : 'Show'} Debug Log
+          </button>
         </footer>
+        
+        {showDebug && (
+          <div className="debug-panel">
+            <div className="debug-header">
+              <h3>Debug Log ({debugLogs.length} entries)</h3>
+              <button onClick={() => { debugLog.length = 0; setDebugLogs([]) }}>Clear</button>
+            </div>
+            <div className="debug-log">
+              {debugLogs.length === 0 ? (
+                <p className="debug-empty">No logs yet. Try searching for a song.</p>
+              ) : (
+                debugLogs.map((entry, i) => (
+                  <div key={i} className="debug-entry">
+                    <span className="debug-time">{entry.time}</span>
+                    <span className="debug-msg">{entry.msg}</span>
+                    {entry.data && (
+                      <pre className="debug-data">{entry.data}</pre>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

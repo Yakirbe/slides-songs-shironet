@@ -145,37 +145,38 @@ def add_lyrics_slide(prs: Presentation, title: str, lyrics_lines: list[str], son
     # Try to add background image from Lorem Picsum
     bg_image = download_background_image(song_index)
     
-    # Add dark background first (always)
+    # Add light/white background (bright mode)
     background = slide.shapes.add_shape(
         MSO_SHAPE.RECTANGLE,
         0, 0, slide_width, slide_height
     )
     background.fill.solid()
-    background.fill.fore_color.rgb = RGBColor(25, 25, 35)
+    background.fill.fore_color.rgb = RGBColor(245, 245, 245)  # Light gray-white
     background.line.fill.background()
     
-    # Add background image if available (on top of dark bg)
+    # Skip background images in bright mode for cleaner look
     has_bg_image = False
-    if bg_image:
-        try:
-            slide.shapes.add_picture(
-                str(bg_image), 0, 0, slide_width, slide_height
-            )
-            has_bg_image = True
-        except Exception as e:
-            print(f"  Warning: Could not add image: {e}")
     
-    # Add title
+    # Add title bar background (light gray)
+    title_bar = slide.shapes.add_shape(
+        MSO_SHAPE.RECTANGLE,
+        0, 0, slide_width, Inches(0.75)
+    )
+    title_bar.fill.solid()
+    title_bar.fill.fore_color.rgb = RGBColor(232, 232, 232)  # Light gray
+    title_bar.line.fill.background()
+    
+    # Add title text
     title_box = slide.shapes.add_textbox(
-        Inches(0.3), Inches(0.2),
-        slide_width - Inches(0.6), Inches(0.6)
+        Inches(0.3), Inches(0.15),
+        slide_width - Inches(0.6), Inches(0.55)
     )
     title_frame = title_box.text_frame
     title_para = title_frame.paragraphs[0]
     title_para.text = title
     title_para.font.size = Pt(32)
     title_para.font.bold = True
-    title_para.font.color.rgb = RGBColor(40, 40, 60)  # Dark blue-gray
+    title_para.font.color.rgb = RGBColor(22, 33, 62)  # Dark navy
     title_para.alignment = PP_ALIGN.CENTER
     
     # Get layout config
@@ -207,19 +208,7 @@ def add_lyrics_slide(prs: Presentation, title: str, lyrics_lines: list[str], son
         else:
             left = margin + (i * (col_width + col_gap))
         
-        # Add semi-transparent background box for text readability
-        if has_bg_image:
-            text_bg = slide.shapes.add_shape(
-                MSO_SHAPE.ROUNDED_RECTANGLE,
-                left - Inches(0.1), content_top - Inches(0.05),
-                col_width + Inches(0.2), content_height + Inches(0.1)
-            )
-            text_bg.fill.solid()
-            text_bg.fill.fore_color.rgb = RGBColor(30, 30, 50)  # Dark blue-gray, softer than black
-            text_bg.line.fill.background()
-            # Set corner radius
-            text_bg.adjustments[0] = 0.08
-        
+        # No background box needed in bright mode (white background)
         text_box = slide.shapes.add_textbox(
             left, content_top,
             col_width, content_height
@@ -258,14 +247,14 @@ def clean_punctuation(text: str) -> str:
     return text.replace(',', '').replace('.', '')
 
 
-# Color palette for alternating verse/chorus sections
+# Bright mode: dark text colors for sections on white background
 SECTION_COLORS = [
-    RGBColor(240, 240, 255),   # White-blue (default)
-    RGBColor(255, 220, 180),   # Warm peach
-    RGBColor(180, 255, 200),   # Mint green
-    RGBColor(255, 200, 220),   # Soft pink
-    RGBColor(200, 220, 255),   # Light blue
-    RGBColor(255, 255, 180),   # Soft yellow
+    RGBColor(26, 26, 46),      # Dark navy (default)
+    RGBColor(60, 60, 80),      # Dark gray-blue
+    RGBColor(40, 70, 100),     # Steel blue
+    RGBColor(80, 50, 50),      # Dark burgundy
+    RGBColor(30, 60, 60),      # Dark teal
+    RGBColor(60, 40, 80),      # Dark purple
 ]
 
 
@@ -352,13 +341,13 @@ def main():
     slide_layout = prs.slide_layouts[6]  # Blank
     title_slide = prs.slides.add_slide(slide_layout)
     
-    # Title slide background
+    # Title slide background (bright mode)
     bg = title_slide.shapes.add_shape(
         MSO_SHAPE.RECTANGLE,
         0, 0, prs.slide_width, prs.slide_height
     )
     bg.fill.solid()
-    bg.fill.fore_color.rgb = RGBColor(20, 20, 35)
+    bg.fill.fore_color.rgb = RGBColor(245, 245, 245)  # Light gray-white
     bg.line.fill.background()
     
     # Title text
@@ -371,14 +360,14 @@ def main():
     p.text = "🎵 Song Lyrics Collection"
     p.font.size = Pt(54)
     p.font.bold = True
-    p.font.color.rgb = RGBColor(255, 220, 120)
+    p.font.color.rgb = RGBColor(22, 33, 62)  # Dark navy
     p.alignment = PP_ALIGN.CENTER
     
     # Subtitle
     p2 = tf.add_paragraph()
     p2.text = f"{len(lyrics_files)} Songs"
     p2.font.size = Pt(28)
-    p2.font.color.rgb = RGBColor(180, 180, 200)
+    p2.font.color.rgb = RGBColor(80, 80, 100)  # Dark gray
     p2.alignment = PP_ALIGN.CENTER
     
     # Add a slide for each song
