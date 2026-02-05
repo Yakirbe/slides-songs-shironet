@@ -88,7 +88,17 @@ async function searchShironet(query) {
       let title = text
       let artist = ''
       
-      if (text.includes(' - ')) {
+      // Try to find artist from parent/sibling elements
+      const parent = link.closest('tr, div, li')
+      if (parent) {
+        const artistLink = parent.querySelector('a[href*="prfid"]')
+        if (artistLink && artistLink !== link) {
+          artist = artistLink.textContent.trim()
+        }
+      }
+      
+      // Fallback: split by " - " if present in link text
+      if (!artist && text.includes(' - ')) {
         const parts = text.split(' - ')
         title = parts[0].trim()
         artist = parts[1]?.trim() || ''
