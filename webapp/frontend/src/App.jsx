@@ -33,33 +33,58 @@ function cleanPunctuation(text) {
   return text.replace(/[,.]/g, '')
 }
 
-// Normalize lyrics: collapse multiple empty lines into one, trim whitespace
+// Normalize lyrics: smart separator handling
 function normalizeLyrics(text) {
-  // Split into lines
-  let lines = text.split('\n')
+  // Split into lines and trim
+  let lines = text.split('\n').map(l => l.trim())
   
-  // Trim each line
-  lines = lines.map(l => l.trim())
+  // Count empty line patterns
+  let singleEmptyCount = 0  // Single empty line between text
+  let doubleEmptyCount = 0  // Two or more consecutive empty lines
   
-  // Collapse consecutive empty lines into single empty line
-  const normalized = []
-  let prevEmpty = false
-  
-  for (const line of lines) {
-    if (line === '') {
-      if (!prevEmpty) {
-        normalized.push('')
-        prevEmpty = true
-      }
-      // Skip additional empty lines
+  let consecutiveEmpty = 0
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i] === '') {
+      consecutiveEmpty++
     } else {
-      normalized.push(line)
-      prevEmpty = false
+      if (consecutiveEmpty === 1) singleEmptyCount++
+      if (consecutiveEmpty >= 2) doubleEmptyCount++
+      consecutiveEmpty = 0
     }
   }
   
-  // Remove leading/trailing empty lines
+  // If there are both single and double separators, remove singles (keep only doubles as breaks)
+  // If only singles exist, keep them
+  const hasDoubles = doubleEmptyCount > 0
+  const hasSingles = singleEmptyCount > 0
+  
+  const normalized = []
+  consecutiveEmpty = 0
+  
+  for (const line of lines) {
+    if (line === '') {
+      consecutiveEmpty++
+    } else {
+      // Decide whether to add separator
+      if (consecutiveEmpty > 0) {
+        if (hasDoubles && hasSingles) {
+          // Only add separator for double+ empty lines
+          if (consecutiveEmpty >= 2) {
+            normalized.push('') // Single blank line as separator
+          }
+        } else {
+          // Keep single separators as they are
+          normalized.push('')
+        }
+      }
+      normalized.push(line)
+      consecutiveEmpty = 0
+    }
+  }
+  
+  // Remove leading empty lines
   while (normalized.length && normalized[0] === '') normalized.shift()
+  // Remove trailing empty lines  
   while (normalized.length && normalized[normalized.length - 1] === '') normalized.pop()
   
   return normalized.join('\n')
