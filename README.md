@@ -77,6 +77,25 @@ python create_lyrics_pptx.py
 - Shironet may occasionally show CAPTCHAs - solve them manually if needed
 - Lyrics are copyrighted - use for personal purposes only
 
+## Deployment
+
+### GitHub Pages (Frontend Only)
+
+1. Push to GitHub
+2. Go to repo Settings → Pages → Source: GitHub Actions
+3. Set `BACKEND_URL` variable in repo settings (Settings → Secrets → Variables)
+4. The workflow auto-deploys on push to master/main
+
+### Backend Deployment (Render - Free Tier)
+
+1. Create account at [render.com](https://render.com)
+2. New → Web Service → Connect your repo
+3. Settings:
+   - Root Directory: `webapp/backend`
+   - Build Command: `pip install -r requirements.txt && playwright install chromium --with-deps`
+   - Start Command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
+4. Copy the URL and set as `BACKEND_URL` in GitHub repo variables
+
 ## Tech Stack
 
 - **Frontend**: React, Vite
