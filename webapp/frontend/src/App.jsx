@@ -1,8 +1,26 @@
 import { useState } from 'react'
 import pptxgen from 'pptxgenjs'
 
-// CORS proxy for fetching Shironet pages
-const CORS_PROXY = 'https://api.allorigins.win/raw?url='
+// Multiple CORS proxies for fallback
+const CORS_PROXIES = [
+  (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+  (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+]
+
+async function fetchWithProxy(url) {
+  for (const getProxyUrl of CORS_PROXIES) {
+    try {
+      const proxyUrl = getProxyUrl(url)
+      const response = await fetch(proxyUrl)
+      if (response.ok) {
+        return await response.text()
+      }
+    } catch (e) {
+      console.log('Proxy failed, trying next...', e)
+    }
+  }
+  throw new Error('All proxies failed')
+}
 
 // Section colors (cycling through for verses/choruses)
 const SECTION_COLORS = [
@@ -55,10 +73,7 @@ function getOptimalLayout(lineCount) {
 async function searchShironet(query) {
   const searchUrl = `https://shironet.mako.co.il/search?q=${encodeURIComponent(query)}`
   
-  const response = await fetch(CORS_PROXY + encodeURIComponent(searchUrl))
-  if (!response.ok) throw new Error('Search failed')
-  
-  const html = await response.text()
+  const html = await fetchWithProxy(searchUrl)
   const parser = new DOMParser()
   const doc = parser.parseFromString(html, 'text/html')
   
@@ -95,20 +110,35 @@ async function searchShironet(query) {
 
 // Extract lyrics from Shironet page
 async function extractLyrics(url) {
-  const response = await fetch(CORS_PROXY + encodeURIComponent(url))
-  if (!response.ok) throw new Error('Failed to load page')
-  
-  const html = await response.text()
+  const html = await fetchWithProxy(url)
   const parser = new DOMParser()
   const doc = parser.parseFromString(html, 'text/html')
   
-  // Get title
-  const titleElem = doc.querySelector('h1, .artist_song_name_txt')
-  const title = titleElem?.textContent?.trim() || ''
+  // Get title - try multiple selectors
+  let title = ''
+  const titleSelectors = ['.artist_song_name_txt', 'h1', '.work_title']
+  for (const sel of titleSelectors) {
+    const elem = doc.querySelector(sel)
+    if (elem?.textContent?.trim()) {
+      title = elem.textContent.trim()
+      break
+    }
+  }
   
-  // Get lyrics
-  const lyricsElem = doc.querySelector('span.artist_lyrics_text')
-  const lyrics = lyricsElem?.textContent || ''
+  // Get lyrics - try multiple selectors
+  let lyrics = ''
+  const lyricsSelectors = ['span.artist_lyrics_text', '.artist_lyrics_text', '.lyrics_text', 'pre']
+  for (const sel of lyricsSelectors) {
+    const elem = doc.querySelector(sel)
+    if (elem?.textContent?.trim()) {
+      lyrics = elem.textContent.trim()
+      break
+    }
+  }
+  
+  if (!lyrics) {
+    throw new Error('Could not find lyrics on page')
+  }
   
   return { title, lyrics }
 }
