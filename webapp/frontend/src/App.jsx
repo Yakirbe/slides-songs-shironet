@@ -106,12 +106,54 @@ function prepareLines(lines) {
     .filter(line => line.length > 0)
 }
 
-function getOptimalLayout(lineCount) {
-  if (lineCount <= 15) return { columns: 1, fontSize: 18 }
-  if (lineCount <= 28) return { columns: 2, fontSize: 16 }
-  if (lineCount <= 42) return { columns: 3, fontSize: 14 }
-  if (lineCount <= 56) return { columns: 4, fontSize: 12 }
-  return { columns: 5, fontSize: 10 }
+// Calculate optimal layout to fill the slide
+function getOptimalLayout(lines) {
+  // Slide dimensions (16:9 widescreen in inches)
+  const slideWidth = 13.33
+  const slideHeight = 7.5
+  const titleHeight = 0.7
+  const contentHeight = slideHeight - titleHeight - 0.2 // Available height for lyrics
+  const contentWidth = slideWidth - 0.3 // Small margin
+  
+  // Approximate character width and line height ratios (per point of font size)
+  const charWidthPerPt = 0.012 // inches per character per font point (approximate)
+  const lineHeightPerPt = 0.018 // inches per line per font point
+  
+  // Find the longest line and count total lines
+  const lineCount = lines.length
+  const maxLineLength = Math.max(...lines.map(l => l.length), 1)
+  const avgLineLength = lines.reduce((sum, l) => sum + l.length, 0) / lineCount
+  
+  // Try different column configurations and find the best fit
+  let bestConfig = { columns: 1, fontSize: 10 }
+  let bestScore = 0
+  
+  for (let cols = 1; cols <= 5; cols++) {
+    const linesPerCol = Math.ceil(lineCount / cols)
+    const colWidth = (contentWidth - (cols - 1) * 0.1) / cols
+    
+    // Calculate max font size that fits width (based on longest line in any column)
+    const maxFontForWidth = colWidth / (maxLineLength * charWidthPerPt)
+    
+    // Calculate max font size that fits height
+    const maxFontForHeight = contentHeight / (linesPerCol * lineHeightPerPt)
+    
+    // Use the smaller of the two constraints
+    let fontSize = Math.min(maxFontForWidth, maxFontForHeight)
+    
+    // Clamp font size to reasonable range
+    fontSize = Math.max(8, Math.min(28, Math.floor(fontSize)))
+    
+    // Score: prefer larger fonts and fewer columns
+    const score = fontSize * (1 + 0.1 * (5 - cols))
+    
+    if (score > bestScore) {
+      bestScore = score
+      bestConfig = { columns: cols, fontSize }
+    }
+  }
+  
+  return bestConfig
 }
 
 // Search Shironet for songs
@@ -269,8 +311,8 @@ async function generatePptx(title, lyricsText) {
   // Clean lines - remove punctuation, filter empty
   const cleanedLines = prepareLines(lines)
   
-  const layout = getOptimalLayout(cleanedLines.length)
-  const { columns, fontSize } = layout
+  // Calculate optimal layout based on content
+  const { columns, fontSize } = getOptimalLayout(cleanedLines)
   
   const slide = pptx.addSlide()
   
