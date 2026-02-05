@@ -1,78 +1,171 @@
 import { useState } from 'react'
+import pptxgen from 'pptxgenjs'
 
-// Configure backend URL - change this when deploying
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+// Section colors (cycling through for verses/choruses)
+const SECTION_COLORS = [
+  'E8EAFF', // White-blue
+  'FFE4C4', // Peach
+  'C8FFD4', // Mint
+  'FFD0E0', // Pink
+  'D0E8FF', // Light blue
+  'FFFFC0', // Yellow
+]
 
-function App() {
-  const [query, setQuery] = useState('')
-  const [results, setResults] = useState([])
-  const [loading, setLoading] = useState(false)
-  const [generating, setGenerating] = useState(null)
-  const [error, setError] = useState('')
+function isHebrew(text) {
+  for (const char of text) {
+    if (char >= '\u0590' && char <= '\u05FF') return true
+  }
+  return false
+}
 
-  const handleSearch = async (e) => {
-    e.preventDefault()
-    if (!query.trim()) return
+function cleanPunctuation(text) {
+  return text.replace(/[,.]/g, '')
+}
 
-    setLoading(true)
-    setError('')
-    setResults([])
-
-    try {
-      const response = await fetch(`${API_BASE}/search`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: query.trim() })
-      })
-      
-      if (!response.ok) throw new Error('Search failed')
-      
-      const data = await response.json()
-      setResults(data.results || [])
-      
-      if (data.results?.length === 0) {
-        setError('No results found')
+function splitIntoSections(lines) {
+  const sections = []
+  let current = []
+  
+  for (const line of lines) {
+    if (!line.trim()) {
+      if (current.length) {
+        sections.push(current)
+        current = []
       }
-    } catch (err) {
-      setError('Failed to search. Make sure the backend is running.')
-      console.error(err)
-    } finally {
-      setLoading(false)
+    } else {
+      current.push(cleanPunctuation(line))
     }
   }
+  if (current.length) sections.push(current)
+  return sections
+}
 
-  const handleGenerate = async (result) => {
-    setGenerating(result.url)
+function getOptimalLayout(lineCount) {
+  if (lineCount <= 15) return { columns: 1, fontSize: 18 }
+  if (lineCount <= 28) return { columns: 2, fontSize: 16 }
+  if (lineCount <= 42) return { columns: 3, fontSize: 14 }
+  if (lineCount <= 56) return { columns: 4, fontSize: 12 }
+  return { columns: 5, fontSize: 10 }
+}
+
+async function generatePptx(title, lyricsText) {
+  const pptx = new pptxgen()
+  pptx.layout = 'LAYOUT_WIDE' // 13.33" x 7.5"
+  
+  const lines = lyricsText.split('\n')
+  const isRtl = isHebrew(title) || isHebrew(lyricsText)
+  
+  // Split into sections and assign colors
+  const sections = splitIntoSections(lines)
+  const coloredLines = []
+  
+  for (let i = 0; i < sections.length; i++) {
+    const color = SECTION_COLORS[i % SECTION_COLORS.length]
+    for (const line of sections[i]) {
+      coloredLines.push({ text: line, color })
+    }
+    if (i < sections.length - 1) {
+      coloredLines.push({ text: '', color: SECTION_COLORS[0] })
+    }
+  }
+  
+  const layout = getOptimalLayout(coloredLines.length)
+  const { columns, fontSize } = layout
+  
+  // Create slide
+  const slide = pptx.addSlide()
+  
+  // Background image from Lorem Picsum
+  const seed = Math.abs(title.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % 1000
+  slide.addImage({
+    path: `https://picsum.photos/seed/${seed}/1920/1080`,
+    x: 0, y: 0, w: '100%', h: '100%'
+  })
+  
+  // Title
+  slide.addText(title, {
+    x: 0.2, y: 0.15, w: '96%', h: 0.5,
+    fontSize: 28, bold: true,
+    color: '1E1E32',
+    align: 'center'
+  })
+  
+  // Split into columns
+  const linesPerCol = Math.ceil(coloredLines.length / columns)
+  const cols = []
+  for (let i = 0; i < columns; i++) {
+    cols.push(coloredLines.slice(i * linesPerCol, (i + 1) * linesPerCol))
+  }
+  
+  // Column dimensions
+  const margin = 0.3
+  const colGap = 0.2
+  const contentTop = 0.75
+  const contentHeight = 6.5
+  const availableWidth = 13.33 - (2 * margin)
+  const colWidth = (availableWidth - (colGap * (columns - 1))) / columns
+  
+  // Render columns
+  for (let i = 0; i < cols.length; i++) {
+    const colLines = cols[i]
+    
+    // Calculate position (RTL: start from right)
+    let left
+    if (isRtl) {
+      left = 13.33 - margin - colWidth - (i * (colWidth + colGap))
+    } else {
+      left = margin + (i * (colWidth + colGap))
+    }
+    
+    // Background box
+    slide.addShape('roundRect', {
+      x: left - 0.1, y: contentTop - 0.05,
+      w: colWidth + 0.2, h: contentHeight + 0.1,
+      fill: { color: '1E1E32', transparency: 20 },
+      line: { color: '1E1E32', transparency: 100 }
+    })
+    
+    // Text content
+    const textObjects = colLines.map(item => ({
+      text: item.text + '\n',
+      options: { color: item.color, fontSize, breakLine: true }
+    }))
+    
+    slide.addText(textObjects, {
+      x: left, y: contentTop,
+      w: colWidth, h: contentHeight,
+      valign: 'top',
+      align: isRtl ? 'right' : 'left',
+      rtlMode: isRtl
+    })
+  }
+  
+  // Download
+  await pptx.writeFile({ fileName: `${title.replace(/\s+/g, '_')}.pptx` })
+}
+
+function App() {
+  const [title, setTitle] = useState('')
+  const [lyrics, setLyrics] = useState('')
+  const [generating, setGenerating] = useState(false)
+  const [error, setError] = useState('')
+
+  const handleGenerate = async () => {
+    if (!title.trim() || !lyrics.trim()) {
+      setError('Please enter both title and lyrics')
+      return
+    }
+    
+    setGenerating(true)
     setError('')
-
+    
     try {
-      const response = await fetch(`${API_BASE}/generate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          title: `${result.title} - ${result.artist}`,
-          url: result.url 
-        })
-      })
-      
-      if (!response.ok) throw new Error('Generation failed')
-      
-      // Download the file
-      const blob = await response.blob()
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `${result.title.replace(/\s+/g, '_')}.pptx`
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-      window.URL.revokeObjectURL(url)
-      
+      await generatePptx(title.trim(), lyrics.trim())
     } catch (err) {
-      setError('Failed to generate slide. Check if the backend is running.')
+      setError('Failed to generate PPTX: ' + err.message)
       console.error(err)
     } finally {
-      setGenerating(null)
+      setGenerating(false)
     }
   }
 
@@ -84,28 +177,52 @@ function App() {
             <span className="logo-icon">🎵</span>
             <h1>Lyrics Slide Generator</h1>
           </div>
-          <p className="subtitle">Search for a song and generate beautiful presentation slides</p>
+          <p className="subtitle">Paste lyrics and generate beautiful presentation slides</p>
         </header>
 
-        <form onSubmit={handleSearch} className="search-form">
-          <div className="search-box">
+        <div className="form">
+          <div className="input-group">
+            <label>Song Title</label>
             <input
               type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Enter song name..."
-              className="search-input"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Enter song title..."
+              className="text-input"
               dir="auto"
             />
-            <button type="submit" className="search-button" disabled={loading}>
-              {loading ? (
-                <span className="spinner"></span>
-              ) : (
-                <span>Search</span>
-              )}
-            </button>
           </div>
-        </form>
+          
+          <div className="input-group">
+            <label>Lyrics</label>
+            <textarea
+              value={lyrics}
+              onChange={(e) => setLyrics(e.target.value)}
+              placeholder="Paste lyrics here... (separate verses with empty lines)"
+              className="lyrics-input"
+              dir="auto"
+              rows={12}
+            />
+          </div>
+          
+          <button 
+            onClick={handleGenerate} 
+            className="generate-button"
+            disabled={generating}
+          >
+            {generating ? (
+              <>
+                <span className="spinner"></span>
+                <span>Generating...</span>
+              </>
+            ) : (
+              <>
+                <span className="download-icon">📥</span>
+                <span>Generate PPTX</span>
+              </>
+            )}
+          </button>
+        </div>
 
         {error && (
           <div className="error-message">
@@ -113,41 +230,17 @@ function App() {
           </div>
         )}
 
-        {results.length > 0 && (
-          <div className="results">
-            <h2 className="results-title">Results</h2>
-            <div className="results-list">
-              {results.map((result, index) => (
-                <div key={index} className="result-card">
-                  <div className="result-info">
-                    <h3 className="result-title">{result.title}</h3>
-                    <p className="result-artist">{result.artist}</p>
-                  </div>
-                  <button
-                    onClick={() => handleGenerate(result)}
-                    className="generate-button"
-                    disabled={generating === result.url}
-                  >
-                    {generating === result.url ? (
-                      <>
-                        <span className="spinner small"></span>
-                        <span>Generating...</span>
-                      </>
-                    ) : (
-                      <>
-                        <span className="download-icon">📥</span>
-                        <span>Generate PPTX</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        <div className="tips">
+          <h3>Tips</h3>
+          <ul>
+            <li>Separate verses/choruses with empty lines for color coding</li>
+            <li>Hebrew text auto-detects RTL</li>
+            <li>Long lyrics auto-split into columns</li>
+          </ul>
+        </div>
 
         <footer className="footer">
-          <p>Searches Shironet for lyrics and generates PowerPoint slides</p>
+          <p>100% client-side • No data sent to servers</p>
         </footer>
       </div>
     </div>

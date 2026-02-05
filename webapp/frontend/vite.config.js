@@ -6,14 +6,7 @@ export default defineConfig({
   // For GitHub Pages - change 'slides_songs_shironet' to your repo name
   base: process.env.GITHUB_PAGES ? '/slides_songs_shironet/' : '/',
   server: {
-    port: 5173,
-    proxy: {
-      '/api': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, '')
-      }
-    }
+    port: 5173
   },
   build: {
     outDir: 'dist'

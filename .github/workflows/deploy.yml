@@ -35,8 +35,6 @@ jobs:
         working-directory: webapp/frontend
         env:
           GITHUB_PAGES: true
-          # Set your deployed backend URL here
-          VITE_API_URL: ${{ vars.BACKEND_URL }}
         run: npm run build
       
       - name: Setup Pages
