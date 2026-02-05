@@ -19,15 +19,8 @@ async function fetchWithProxy(url) {
   return data.contents
 }
 
-// Section colors (cycling through for verses/choruses)
-const SECTION_COLORS = [
-  'E8EAFF', // White-blue
-  'FFE4C4', // Peach
-  'C8FFD4', // Mint
-  'FFD0E0', // Pink
-  'D0E8FF', // Light blue
-  'FFFFC0', // Yellow
-]
+// Single clean color for all lyrics text
+const LYRICS_COLOR = 'FFFFFF' // White
 
 function isHebrew(text) {
   for (const char of text) {
@@ -72,22 +65,11 @@ function normalizeLyrics(text) {
   return normalized.join('\n')
 }
 
-function splitIntoSections(lines) {
-  const sections = []
-  let current = []
-  
-  for (const line of lines) {
-    if (!line.trim()) {
-      if (current.length) {
-        sections.push(current)
-        current = []
-      }
-    } else {
-      current.push(cleanPunctuation(line))
-    }
-  }
-  if (current.length) sections.push(current)
-  return sections
+// Clean and prepare lyrics lines
+function prepareLines(lines) {
+  return lines
+    .map(line => cleanPunctuation(line.trim()))
+    .filter(line => line.length > 0)
 }
 
 function getOptimalLayout(lineCount) {
@@ -221,20 +203,10 @@ async function generatePptx(title, lyricsText) {
   const lines = normalizedLyrics.split('\n')
   const isRtl = isHebrew(title) || isHebrew(lyricsText)
   
-  const sections = splitIntoSections(lines)
-  const coloredLines = []
+  // Clean lines - remove punctuation, filter empty
+  const cleanedLines = prepareLines(lines)
   
-  for (let i = 0; i < sections.length; i++) {
-    const color = SECTION_COLORS[i % SECTION_COLORS.length]
-    for (const line of sections[i]) {
-      coloredLines.push({ text: line, color })
-    }
-    if (i < sections.length - 1) {
-      coloredLines.push({ text: '', color: SECTION_COLORS[0] })
-    }
-  }
-  
-  const layout = getOptimalLayout(coloredLines.length)
+  const layout = getOptimalLayout(cleanedLines.length)
   const { columns, fontSize } = layout
   
   const slide = pptx.addSlide()
@@ -246,25 +218,30 @@ async function generatePptx(title, lyricsText) {
     x: 0, y: 0, w: '100%', h: '100%'
   })
   
-  // Title
+  // Title with dark background box
+  slide.addShape('rect', {
+    x: 0, y: 0.1, w: '100%', h: 0.6,
+    fill: { color: '000000', transparency: 50 }
+  })
+  
   slide.addText(title, {
     x: 0.2, y: 0.15, w: '96%', h: 0.5,
     fontSize: 28, bold: true,
-    color: '1E1E32',
+    color: 'FFFFFF',
     align: 'center'
   })
   
   // Split into columns
-  const linesPerCol = Math.ceil(coloredLines.length / columns)
+  const linesPerCol = Math.ceil(cleanedLines.length / columns)
   const cols = []
   for (let i = 0; i < columns; i++) {
-    cols.push(coloredLines.slice(i * linesPerCol, (i + 1) * linesPerCol))
+    cols.push(cleanedLines.slice(i * linesPerCol, (i + 1) * linesPerCol))
   }
   
   const margin = 0.3
   const colGap = 0.2
-  const contentTop = 0.75
-  const contentHeight = 6.5
+  const contentTop = 0.8
+  const contentHeight = 6.4
   const availableWidth = 13.33 - (2 * margin)
   const colWidth = (availableWidth - (colGap * (columns - 1))) / columns
   
@@ -278,21 +255,22 @@ async function generatePptx(title, lyricsText) {
       left = margin + (i * (colWidth + colGap))
     }
     
+    // Dark semi-transparent background for text
     slide.addShape('roundRect', {
       x: left - 0.1, y: contentTop - 0.05,
       w: colWidth + 0.2, h: contentHeight + 0.1,
-      fill: { color: '1E1E32', transparency: 20 },
-      line: { color: '1E1E32', transparency: 100 }
+      fill: { color: '000000', transparency: 40 },
+      line: { color: '000000', transparency: 100 }
     })
     
-    const textObjects = colLines.map(item => ({
-      text: item.text + '\n',
-      options: { color: item.color, fontSize, breakLine: true }
-    }))
+    // All text in white
+    const textContent = colLines.join('\n')
     
-    slide.addText(textObjects, {
+    slide.addText(textContent, {
       x: left, y: contentTop,
       w: colWidth, h: contentHeight,
+      fontSize,
+      color: LYRICS_COLOR,
       valign: 'top',
       align: isRtl ? 'right' : 'left',
       rtlMode: isRtl
