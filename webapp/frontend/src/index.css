@@ -326,6 +326,86 @@ body {
   font-size: 1.2rem;
 }
 
+/* Mode Toggle */
+.mode-toggle {
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.mode-btn {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  padding: 0.6rem 1.5rem;
+  border-radius: 0.5rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+
+.mode-btn:hover {
+  border-color: var(--accent-primary);
+  color: var(--text-primary);
+}
+
+.mode-btn.active {
+  background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+  border-color: transparent;
+  color: white;
+}
+
+/* Batch Mode */
+.batch-mode {
+  animation: fadeIn 0.4s ease;
+}
+
+.batch-instructions {
+  color: var(--text-secondary);
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+}
+
+.batch-input {
+  width: 100%;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 0.75rem;
+  padding: 1rem 1.25rem;
+  font-size: 1rem;
+  color: var(--text-primary);
+  font-family: inherit;
+  resize: vertical;
+  min-height: 200px;
+  line-height: 1.7;
+  margin-bottom: 1rem;
+  transition: all 0.3s ease;
+}
+
+.batch-input:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.batch-input::placeholder {
+  color: var(--text-muted);
+}
+
+/* Status Message */
+.status-message {
+  background: rgba(99, 102, 241, 0.1);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  color: var(--accent-secondary);
+  padding: 0.75rem 1.25rem;
+  border-radius: 0.75rem;
+  margin-top: 1rem;
+  text-align: center;
+  font-size: 0.9rem;
+}
+
 /* Footer */
 .footer {
   margin-top: 3rem;
