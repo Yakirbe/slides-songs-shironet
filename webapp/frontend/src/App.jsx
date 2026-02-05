@@ -1,22 +1,31 @@
 import { useState } from 'react'
 import pptxgen from 'pptxgenjs'
 
-// Fetch via allorigins API (JSON response with contents)
-async function fetchWithProxy(url) {
-  // Use allorigins.win get endpoint (returns JSON with contents field)
+// Fetch via allorigins API with retry
+async function fetchWithProxy(url, retries = 2) {
   const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`
   
-  const response = await fetch(proxyUrl)
-  if (!response.ok) {
-    throw new Error(`Proxy error: ${response.status}`)
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const response = await fetch(proxyUrl)
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`)
+      }
+      
+      const data = await response.json()
+      if (!data.contents) {
+        throw new Error('Empty response')
+      }
+      
+      return data.contents
+    } catch (e) {
+      if (attempt === retries) {
+        throw new Error(`Fetch failed after ${retries + 1} attempts: ${e.message}`)
+      }
+      // Wait before retry
+      await new Promise(r => setTimeout(r, 500 * (attempt + 1)))
+    }
   }
-  
-  const data = await response.json()
-  if (!data.contents) {
-    throw new Error('No content returned')
-  }
-  
-  return data.contents
 }
 
 // Single clean color for all lyrics text
@@ -152,70 +161,99 @@ async function searchShironet(query) {
   return results.slice(0, 15)
 }
 
+// Check if text looks like actual lyrics (not template placeholders)
+function isValidLyrics(text) {
+  if (!text || text.length < 20) return false
+  // Filter out template placeholders like {title}, {content}, etc.
+  if (text.includes('{ititle}') || text.includes('{content}') || text.includes('{visible_url}')) {
+    return false
+  }
+  // Check if it has some Hebrew or English words (not just symbols)
+  const hasWords = /[\u0590-\u05FFa-zA-Z]{3,}/.test(text)
+  return hasWords
+}
+
 // Extract lyrics from Shironet page
 async function extractLyrics(url) {
   const html = await fetchWithProxy(url)
   const parser = new DOMParser()
   const doc = parser.parseFromString(html, 'text/html')
   
-  // Get title - try multiple selectors
+  // Get title from the song name element
   let title = ''
-  const titleSelectors = ['.artist_song_name_txt', 'h1.artist_song_name', 'h1', '.work_title']
-  for (const sel of titleSelectors) {
-    const elem = doc.querySelector(sel)
-    if (elem?.textContent?.trim()) {
-      title = elem.textContent.trim()
-      break
-    }
+  const titleElem = doc.querySelector('.artist_song_name_txt')
+  if (titleElem?.textContent?.trim()) {
+    title = titleElem.textContent.trim()
   }
   
-  // Get artist name for title
+  // Get artist name
   let artist = ''
-  const artistElem = doc.querySelector('.artist_singer_title a, .artist_name a')
-  if (artistElem?.textContent?.trim()) {
-    artist = artistElem.textContent.trim()
+  // Look for artist link in the artist info section
+  const artistLinks = doc.querySelectorAll('a[href*="prfid"]')
+  for (const link of artistLinks) {
+    const href = link.getAttribute('href') || ''
+    // Artist page links don't have wrkid
+    if (!href.includes('wrkid') && !href.includes('type=lyrics')) {
+      const text = link.textContent.trim()
+      if (text && text.length > 1 && !text.includes('{')) {
+        artist = text
+        break
+      }
+    }
   }
   
   if (title && artist && !title.includes(artist)) {
     title = `${title} - ${artist}`
   }
   
-  // Get lyrics - the main lyrics are in span.artist_lyrics_text
-  // The HTML structure uses <br> tags for line breaks
+  // Get lyrics - specifically from span.artist_lyrics_text
   let lyrics = ''
-  const lyricsElem = doc.querySelector('span.artist_lyrics_text')
   
-  if (lyricsElem) {
+  // Find all potential lyrics elements
+  const lyricsElements = doc.querySelectorAll('span.artist_lyrics_text')
+  
+  for (const elem of lyricsElements) {
     // Get innerHTML and convert <br> to newlines
-    let lyricsHtml = lyricsElem.innerHTML
-    // Replace various <br> formats with newlines
+    let lyricsHtml = elem.innerHTML
+    // Replace <br> tags with newlines
     lyricsHtml = lyricsHtml.replace(/<br\s*\/?>/gi, '\n')
-    // Remove any other HTML tags
+    // Remove other HTML tags
     const tempDiv = document.createElement('div')
     tempDiv.innerHTML = lyricsHtml
-    lyrics = tempDiv.textContent.trim()
+    const text = tempDiv.textContent.trim()
+    
+    // Check if this is valid lyrics
+    if (isValidLyrics(text)) {
+      lyrics = text
+      break
+    }
   }
   
-  // Fallback selectors
+  // If still no lyrics, try finding by content pattern
   if (!lyrics) {
-    const fallbackSelectors = ['.artist_lyrics_text', '.lyrics_text', 'pre']
-    for (const sel of fallbackSelectors) {
-      const elem = doc.querySelector(sel)
-      if (elem?.textContent?.trim()) {
-        lyrics = elem.textContent.trim()
-        break
+    // Look for any element that contains Hebrew text with line breaks
+    const allSpans = doc.querySelectorAll('span, div, p')
+    for (const elem of allSpans) {
+      const text = elem.textContent.trim()
+      // Check if it looks like lyrics (multiple lines, Hebrew characters, reasonable length)
+      if (text.length > 100 && text.includes('\n') && isValidLyrics(text)) {
+        // Make sure it's not navigation or menu text
+        if (!text.includes('ראשי') || text.length > 500) {
+          lyrics = text
+          break
+        }
       }
     }
   }
   
   if (!lyrics) {
-    throw new Error('Could not find lyrics on page')
+    throw new Error('Could not find lyrics on page. The page may have loaded incorrectly.')
   }
   
-  // Normalize lyrics to fix spacing issues
+  // Normalize lyrics
   lyrics = normalizeLyrics(lyrics)
   
-  return { title, lyrics }
+  return { title: title || 'Unknown Song', lyrics }
 }
 
 // Generate PPTX
