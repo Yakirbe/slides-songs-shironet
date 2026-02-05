@@ -1,25 +1,22 @@
 import { useState } from 'react'
 import pptxgen from 'pptxgenjs'
 
-// Multiple CORS proxies for fallback
-const CORS_PROXIES = [
-  (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
-  (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-]
-
+// Fetch via allorigins API (JSON response with contents)
 async function fetchWithProxy(url) {
-  for (const getProxyUrl of CORS_PROXIES) {
-    try {
-      const proxyUrl = getProxyUrl(url)
-      const response = await fetch(proxyUrl)
-      if (response.ok) {
-        return await response.text()
-      }
-    } catch (e) {
-      console.log('Proxy failed, trying next...', e)
-    }
+  // Use allorigins.win get endpoint (returns JSON with contents field)
+  const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`
+  
+  const response = await fetch(proxyUrl)
+  if (!response.ok) {
+    throw new Error(`Proxy error: ${response.status}`)
   }
-  throw new Error('All proxies failed')
+  
+  const data = await response.json()
+  if (!data.contents) {
+    throw new Error('No content returned')
+  }
+  
+  return data.contents
 }
 
 // Section colors (cycling through for verses/choruses)
@@ -71,51 +68,49 @@ function getOptimalLayout(lineCount) {
 
 // Search Shironet for songs
 async function searchShironet(query) {
-  const searchUrl = `https://shironet.mako.co.il/search?q=${encodeURIComponent(query)}`
+  const searchUrl = `https://shironet.mako.co.il/searchSongs?q=${encodeURIComponent(query)}&type=works`
   
   const html = await fetchWithProxy(searchUrl)
   const parser = new DOMParser()
   const doc = parser.parseFromString(html, 'text/html')
   
   const results = []
-  const links = doc.querySelectorAll('a[href*="type=lyrics"]')
   
-  links.forEach(link => {
-    const href = link.getAttribute('href')
-    const text = link.textContent.trim()
+  // Look for search result rows in tables
+  const rows = doc.querySelectorAll('tr')
+  
+  rows.forEach(row => {
+    // Find the song link (has type=lyrics and wrkid)
+    const songLink = row.querySelector('a[href*="type=lyrics"][href*="wrkid"]')
+    if (!songLink) return
     
-    if (href && text && href.includes('wrkid')) {
-      let title = text
-      let artist = ''
-      
-      // Try to find artist from parent/sibling elements
-      const parent = link.closest('tr, div, li')
-      if (parent) {
-        const artistLink = parent.querySelector('a[href*="prfid"]')
-        if (artistLink && artistLink !== link) {
-          artist = artistLink.textContent.trim()
-        }
+    const href = songLink.getAttribute('href')
+    const title = songLink.textContent.trim()
+    if (!title) return
+    
+    // Find artist - look for link with prfid but without wrkid (artist page, not song page)
+    let artist = ''
+    const allLinks = row.querySelectorAll('a[href*="prfid"]')
+    for (const link of allLinks) {
+      const linkHref = link.getAttribute('href') || ''
+      // Artist links don't have wrkid
+      if (!linkHref.includes('wrkid') && link.textContent.trim()) {
+        artist = link.textContent.trim()
+        break
       }
-      
-      // Fallback: split by " - " if present in link text
-      if (!artist && text.includes(' - ')) {
-        const parts = text.split(' - ')
-        title = parts[0].trim()
-        artist = parts[1]?.trim() || ''
-      }
-      
-      const fullUrl = href.startsWith('/') 
-        ? `https://shironet.mako.co.il${href}` 
-        : href
-      
-      // Avoid duplicates
-      if (!results.find(r => r.url === fullUrl)) {
-        results.push({ title, artist, url: fullUrl })
-      }
+    }
+    
+    const fullUrl = href.startsWith('/') 
+      ? `https://shironet.mako.co.il${href}` 
+      : href
+    
+    // Avoid duplicates
+    if (!results.find(r => r.url === fullUrl)) {
+      results.push({ title, artist, url: fullUrl })
     }
   })
   
-  return results.slice(0, 10)
+  return results.slice(0, 15)
 }
 
 // Extract lyrics from Shironet page
@@ -126,7 +121,7 @@ async function extractLyrics(url) {
   
   // Get title - try multiple selectors
   let title = ''
-  const titleSelectors = ['.artist_song_name_txt', 'h1', '.work_title']
+  const titleSelectors = ['.artist_song_name_txt', 'h1.artist_song_name', 'h1', '.work_title']
   for (const sel of titleSelectors) {
     const elem = doc.querySelector(sel)
     if (elem?.textContent?.trim()) {
@@ -135,14 +130,42 @@ async function extractLyrics(url) {
     }
   }
   
-  // Get lyrics - try multiple selectors
+  // Get artist name for title
+  let artist = ''
+  const artistElem = doc.querySelector('.artist_singer_title a, .artist_name a')
+  if (artistElem?.textContent?.trim()) {
+    artist = artistElem.textContent.trim()
+  }
+  
+  if (title && artist && !title.includes(artist)) {
+    title = `${title} - ${artist}`
+  }
+  
+  // Get lyrics - the main lyrics are in span.artist_lyrics_text
+  // The HTML structure uses <br> tags for line breaks
   let lyrics = ''
-  const lyricsSelectors = ['span.artist_lyrics_text', '.artist_lyrics_text', '.lyrics_text', 'pre']
-  for (const sel of lyricsSelectors) {
-    const elem = doc.querySelector(sel)
-    if (elem?.textContent?.trim()) {
-      lyrics = elem.textContent.trim()
-      break
+  const lyricsElem = doc.querySelector('span.artist_lyrics_text')
+  
+  if (lyricsElem) {
+    // Get innerHTML and convert <br> to newlines
+    let lyricsHtml = lyricsElem.innerHTML
+    // Replace various <br> formats with newlines
+    lyricsHtml = lyricsHtml.replace(/<br\s*\/?>/gi, '\n')
+    // Remove any other HTML tags
+    const tempDiv = document.createElement('div')
+    tempDiv.innerHTML = lyricsHtml
+    lyrics = tempDiv.textContent.trim()
+  }
+  
+  // Fallback selectors
+  if (!lyrics) {
+    const fallbackSelectors = ['.artist_lyrics_text', '.lyrics_text', 'pre']
+    for (const sel of fallbackSelectors) {
+      const elem = doc.querySelector(sel)
+      if (elem?.textContent?.trim()) {
+        lyrics = elem.textContent.trim()
+        break
+      }
     }
   }
   
